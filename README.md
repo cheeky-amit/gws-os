@@ -136,7 +136,7 @@ Each account has its own persona (tone, priorities, VIP contacts, calendar rules
 ### Install
 
 ```bash
-git clone https://github.com/yourusername/gws-os.git ~/Projects/gws-os
+git clone https://github.com/cheeky-amit/gws-os.git ~/Projects/gws-os
 cd ~/Projects/gws-os
 bash setup
 ```
@@ -166,6 +166,9 @@ The setup script will:
 ~/Projects/gws-os/
 ├── SKILL.md               # Skill entry point
 ├── setup                   # One-time setup
+├── lib/
+│   ├── gws-common.sh       # Shared library (sourced by all skills)
+│   └── templates/           # Contact + topic node templates
 ├── accounts/
 │   ├── registry.json       # Your accounts + scan windows
 │   └── personas/           # Tone, priorities, VIPs per account
@@ -173,10 +176,31 @@ The setup script will:
 │   ├── contacts/           # Who you talk to + trust levels
 │   ├── topics/             # What you talk about + patterns
 │   └── actions/            # What you've done (action logs)
-├── skills/                 # All /gws commands
+├── skills/                 # All 11 /gws commands
 ├── hooks/                  # Post-action logging + pattern detection
-├── tests/                  # pytest — tests ship with each phase
+├── tests/                  # pytest — 50 tests across Phase 1 + 2
 └── docs/                   # Design doc, architecture, case study
+```
+
+### Shared Library (`lib/gws-common.sh`)
+
+Every skill sources one file. No duplicated boilerplate.
+
+```bash
+# What a skill preamble looks like now (2 lines)
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/gws-common.sh"
+gws_init
+
+# Then use shared functions
+for PROFILE in $(get_profiles); do
+    LABEL=$(get_account_field "$PROFILE" label)
+    gws_clean "$PROFILE" gmail users messages list --params '...' --format json
+done
+
+# Memory operations
+create_contact "jane@acme.com" "Jane Smith" "work"
+trust=$(resolve_trust "jane@acme.com" "reply")  # contact node > global defaults
+log_action "reply" "work" "jane@acme.com" "quarterly-reports"
 ```
 
 ### Built on `gws` CLI
@@ -235,9 +259,9 @@ See [`docs/gws-case-study.md`](docs/gws-case-study.md) for the full case study.
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| **1** | Foundation — setup, onboard, triage (single account) | In progress |
-| **2** | Multi-account + memory nodes + morning/reply skills | Planned |
-| **3** | JSONL graph + calendar + brief/followup/search | Planned |
+| **1** | Foundation — setup, onboard, triage (single account) | Done |
+| **2** | Multi-account + shared library + memory CRUD + trust resolution | Done |
+| **3** | JSONL graph + calendar + plan/brief/followup/search | Planned |
 | **4** | Trust progression engine + weekly/learn + pattern detection | Planned |
 
 ---
@@ -247,11 +271,14 @@ See [`docs/gws-case-study.md`](docs/gws-case-study.md) for the full case study.
 GWS OS is open source. PRs welcome.
 
 ```bash
-# Run tests
+# Run all tests (50 tests)
 python3 -m pytest tests/ -v
 
-# Phase 1 tests only
+# Phase 1 tests (setup, registry, structure)
 python3 -m pytest tests/test_phase1/ -v
+
+# Phase 2 tests (CRUD, trust resolution, actions)
+python3 -m pytest tests/test_phase2/ -v
 ```
 
 Tests ship alongside each phase. See [`docs/design.md`](docs/design.md) for the full design document.
