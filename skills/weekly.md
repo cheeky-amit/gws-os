@@ -4,16 +4,8 @@ description: Weekly review — summarize actions, patterns learned, trust change
 ---
 
 ```bash
-# Verify dependencies
-command -v jq >/dev/null 2>&1 || { echo "ERROR: jq required. Run: brew install jq"; exit 1; }
-
-GWS_OS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REGISTRY="$GWS_OS_DIR/accounts/registry.json"
-
-if [[ ! -f "$REGISTRY" ]]; then
-    echo "ERROR: No accounts configured. Run 'bash setup' first."
-    exit 1
-fi
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/gws-common.sh"
+gws_init
 
 echo "=== GWS Weekly Review ==="
 echo "Week ending: $(date '+%A, %B %d %Y')"
@@ -22,7 +14,7 @@ echo ""
 # Load all action logs from the past 7 days
 echo "=== Action Logs (Last 7 Days) ==="
 CUTOFF=$(date -u -v-7d +"%Y-%m-%d" 2>/dev/null || date -u -d "-7 days" +"%Y-%m-%d")
-for ACTION_FILE in "$GWS_OS_DIR"/memory/actions/*.jsonl; do
+for ACTION_FILE in "$GWS_MEMORY_DIR"/actions/*.jsonl; do
     if [[ -f "$ACTION_FILE" ]]; then
         BASENAME=$(basename "$ACTION_FILE")
         # Filter to last 7 days
@@ -37,33 +29,17 @@ done
 
 # Load all contact nodes
 echo "=== Contact Nodes ==="
-if ls "$GWS_OS_DIR"/memory/contacts/*.md &>/dev/null; then
-    for CONTACT_FILE in "$GWS_OS_DIR"/memory/contacts/*.md; do
-        echo "--- $(basename "$CONTACT_FILE") ---"
-        cat "$CONTACT_FILE"
-        echo ""
-    done
-else
-    echo "  No contacts in memory yet."
-fi
+print_contacts
 
 # Load all topic nodes
 echo "=== Topic Nodes ==="
-if ls "$GWS_OS_DIR"/memory/topics/*.md &>/dev/null; then
-    for TOPIC_FILE in "$GWS_OS_DIR"/memory/topics/*.md; do
-        echo "--- $(basename "$TOPIC_FILE") ---"
-        cat "$TOPIC_FILE"
-        echo ""
-    done
-else
-    echo "  No topics in memory yet."
-fi
+print_topics
 
 # Load automate logs
 echo "=== Automated Actions This Week ==="
 for i in $(seq 0 6); do
     DATE=$(date -v-${i}d +"%Y-%m-%d" 2>/dev/null || date -d "-${i} days" +"%Y-%m-%d")
-    LOG="$GWS_OS_DIR/memory/actions/automate-log-${DATE}.jsonl"
+    LOG="$GWS_MEMORY_DIR/actions/automate-log-${DATE}.jsonl"
     if [[ -f "$LOG" ]]; then
         echo "--- $DATE ---"
         cat "$LOG"

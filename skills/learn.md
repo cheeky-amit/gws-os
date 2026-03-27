@@ -4,77 +4,34 @@ description: Transparency and control — see what the system knows, adjust trus
 ---
 
 ```bash
-GWS_OS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REGISTRY="$GWS_OS_DIR/accounts/registry.json"
-
-if [[ ! -f "$REGISTRY" ]]; then
-    echo "ERROR: No accounts configured. Run 'bash setup' first."
-    exit 1
-fi
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/gws-common.sh"
+gws_init
 
 echo "=== GWS Learn — What I Know ==="
 echo ""
 
-# Contact count
-CONTACT_COUNT=0
-if ls "$GWS_OS_DIR"/memory/contacts/*.md &>/dev/null; then
-    CONTACT_COUNT=$(ls "$GWS_OS_DIR"/memory/contacts/*.md | wc -l | tr -d ' ')
-fi
-
-# Topic count
-TOPIC_COUNT=0
-if ls "$GWS_OS_DIR"/memory/topics/*.md &>/dev/null; then
-    TOPIC_COUNT=$(ls "$GWS_OS_DIR"/memory/topics/*.md | wc -l | tr -d ' ')
-fi
-
-# Action log count
-ACTION_COUNT=0
-for F in "$GWS_OS_DIR"/memory/actions/*.jsonl; do
-    if [[ -f "$F" ]]; then
-        ACTION_COUNT=$((ACTION_COUNT + $(wc -l < "$F")))
-    fi
-done
-
 echo "Memory Stats:"
-echo "  Contacts: $CONTACT_COUNT"
-echo "  Topics:   $TOPIC_COUNT"
-echo "  Actions:  $ACTION_COUNT logged"
+print_memory_summary
 echo ""
 
 # All contacts with trust levels
 echo "=== All Contacts ==="
-if ls "$GWS_OS_DIR"/memory/contacts/*.md &>/dev/null; then
-    for CONTACT_FILE in "$GWS_OS_DIR"/memory/contacts/*.md; do
-        echo "--- $(basename "$CONTACT_FILE") ---"
-        cat "$CONTACT_FILE"
-        echo ""
-    done
-else
-    echo "  No contacts yet. Use /gws triage or /gws morning to start building memory."
-fi
+print_contacts
 
 # All topics with patterns
 echo "=== All Topics ==="
-if ls "$GWS_OS_DIR"/memory/topics/*.md &>/dev/null; then
-    for TOPIC_FILE in "$GWS_OS_DIR"/memory/topics/*.md; do
-        echo "--- $(basename "$TOPIC_FILE") ---"
-        cat "$TOPIC_FILE"
-        echo ""
-    done
-else
-    echo "  No topics yet."
-fi
+print_topics
 
 # Global trust defaults
-if [[ -f "$GWS_OS_DIR/memory/trust-levels.json" ]]; then
+if [[ -f "$GWS_MEMORY_DIR/trust-levels.json" ]]; then
     echo "=== Global Trust Defaults ==="
-    cat "$GWS_OS_DIR/memory/trust-levels.json"
+    cat "$GWS_MEMORY_DIR/trust-levels.json"
     echo ""
 fi
 
 # Today's automate log
 DATE=$(date +"%Y-%m-%d")
-AUTO_LOG="$GWS_OS_DIR/memory/actions/automate-log-${DATE}.jsonl"
+AUTO_LOG="$GWS_MEMORY_DIR/actions/automate-log-${DATE}.jsonl"
 if [[ -f "$AUTO_LOG" ]]; then
     echo "=== Today's Automated Actions ==="
     cat "$AUTO_LOG"
@@ -86,7 +43,7 @@ else
 fi
 
 # Scheduling preferences
-PLAN_PREFS="$GWS_OS_DIR/memory/topics/scheduling-preferences.md"
+PLAN_PREFS="$GWS_MEMORY_DIR/topics/scheduling-preferences.md"
 if [[ -f "$PLAN_PREFS" ]]; then
     echo "=== Scheduling Preferences ==="
     cat "$PLAN_PREFS"

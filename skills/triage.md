@@ -4,37 +4,23 @@ description: Triage emails across GWS accounts — categorize, prioritize, and a
 ---
 
 ```bash
-# Verify dependencies
-command -v gws >/dev/null 2>&1 || { echo "ERROR: gws not installed. Run 'bash setup' first"; exit 1; }
-command -v jq >/dev/null 2>&1 || { echo "ERROR: jq required. Run: brew install jq"; exit 1; }
-
-GWS_OS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REGISTRY="$GWS_OS_DIR/accounts/registry.json"
-PROFILES_DIR="$HOME/.config/gws-profiles"
-
-if [[ ! -f "$REGISTRY" ]]; then
-    echo "ERROR: No accounts configured. Run 'bash setup' first."
-    exit 1
-fi
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/gws-common.sh"
+gws_init
 
 echo "=== GWS Triage ==="
 echo ""
 
-# Helper: strip "Using keyring backend: keyring" line that gws prints before JSON
-gws_clean() {
-    GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$PROFILES_DIR/$1" gws "${@:2}" 2>&1 | grep -v '^Using keyring backend:'
-}
-
 # Pull unread HEADERS ONLY from each account (lightweight preamble)
-for PROFILE in $(jq -r '.accounts[].gws_profile' "$REGISTRY"); do
+for PROFILE in $(get_profiles); do
     ACCOUNT_ID="$PROFILE"
-    SCAN_WINDOW=$(jq -r --arg p "$PROFILE" '.accounts[] | select(.gws_profile==$p) | .scan_window // "24h"' "$REGISTRY")
-    LABEL=$(jq -r --arg p "$PROFILE" '.accounts[] | select(.gws_profile==$p) | .label' "$REGISTRY")
-    EMAIL=$(jq -r --arg p "$PROFILE" '.accounts[] | select(.gws_profile==$p) | .email' "$REGISTRY")
+    SCAN_WINDOW=$(get_account_field "$PROFILE" scan_window)
+    SCAN_WINDOW="${SCAN_WINDOW:-24h}"
+    LABEL=$(get_account_field "$PROFILE" label)
+    EMAIL=$(get_account_field "$PROFILE" email)
 
     echo "=== Account: $LABEL ($EMAIL) [window: $SCAN_WINDOW] ==="
 
-    # List unread message IDs (gws_clean strips keyring backend output)
+    # List unread message IDs
     MESSAGES=$(gws_clean "$PROFILE" gmail users messages list \
         --params "{\"userId\":\"me\",\"maxResults\":20,\"q\":\"is:unread newer_than:${SCAN_WINDOW}\"}" \
         --format json) || {
@@ -62,25 +48,11 @@ done
 
 # Load known contacts for context
 echo "=== Known Contacts ==="
-if ls "$GWS_OS_DIR"/memory/contacts/*.md &>/dev/null; then
-    for CONTACT_FILE in "$GWS_OS_DIR"/memory/contacts/*.md; do
-        echo "--- $(basename "$CONTACT_FILE") ---"
-        head -20 "$CONTACT_FILE"
-        echo ""
-    done
-else
-    echo "  No contacts in memory yet."
-fi
+print_contacts
 
 # Load persona for each account
 echo "=== Account Personas ==="
-for PERSONA_FILE in "$GWS_OS_DIR"/accounts/personas/*.md; do
-    if [[ -f "$PERSONA_FILE" ]]; then
-        echo "--- $(basename "$PERSONA_FILE") ---"
-        cat "$PERSONA_FILE"
-        echo ""
-    fi
-done
+print_personas
 ```
 
 ## Instructions

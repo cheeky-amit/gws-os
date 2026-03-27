@@ -36,6 +36,9 @@ gws-os/
 ├── CLAUDE.md              # This file
 ├── SKILL.md               # Main entry point (skill registration)
 ├── setup                  # One-time setup script (bash)
+├── lib/
+│   ├── gws-common.sh      # Shared library (all skills source this)
+│   └── templates/          # Node templates (contact.md, topic.md)
 ├── accounts/
 │   ├── registry.json      # Account list (gitignored, user-specific)
 │   └── personas/
@@ -48,26 +51,40 @@ gws-os/
 ├── skills/
 │   ├── onboard.md         # /gws onboard — interactive setup
 │   ├── triage.md          # /gws triage — email triage
-│   ├── morning.md         # /gws morning (Phase 2)
-│   ├── reply.md           # /gws reply (Phase 2)
-│   └── ...
+│   ├── morning.md         # /gws morning — daily brief
+│   ├── reply.md           # /gws reply — context-aware reply
+│   └── ...                # 11 skills total (see SKILL.md)
 ├── hooks/
 │   ├── post-action.sh     # Log actions to memory
 │   └── pattern-detect.sh  # Detect patterns at 5+ observations
 ├── tests/
-│   └── test_phase1/       # Phase 1 tests (pytest)
+│   ├── test_phase1/       # Phase 1 tests (setup, registry, structure)
+│   └── test_phase2/       # Phase 2 tests (CRUD, trust, actions)
 └── docs/
     ├── ARCHITECTURE.md    # Technical reference
     └── design.md          # Full design doc
 ```
 
+## Shared Library (lib/gws-common.sh)
+All skills source this. Key functions:
+- `gws_init` — validate deps, load registry, set globals
+- `gws_clean <profile> <args>` — profile-aware gws wrapper, strips keyring output
+- `get_profiles` / `get_account_field` / `get_default_profile` — registry access
+- `create_contact` / `update_contact` / `get_contact` — contact node CRUD
+- `resolve_trust <email> <action>` — trust resolution (contact > global defaults)
+- `log_action <action> <account> <email> [topic]` — log + auto-update contact
+- `print_contacts` / `print_topics` / `print_personas` / `print_memory_summary` — preamble helpers
+
 ## Commands
 ```bash
-# Run tests
-pytest tests/ -v
+# Run all tests
+python3 -m pytest tests/ -v
 
 # Run Phase 1 tests only
-pytest tests/test_phase1/ -v
+python3 -m pytest tests/test_phase1/ -v
+
+# Run Phase 2 tests only
+python3 -m pytest tests/test_phase2/ -v
 
 # Validate gws CLI
 gws --version

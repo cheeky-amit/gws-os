@@ -4,23 +4,8 @@ description: Cross-calendar scheduling — find optimal slots respecting all acc
 ---
 
 ```bash
-# Verify dependencies
-command -v gws >/dev/null 2>&1 || { echo "ERROR: gws not installed. Run 'bash setup' first"; exit 1; }
-command -v jq >/dev/null 2>&1 || { echo "ERROR: jq required. Run: brew install jq"; exit 1; }
-
-GWS_OS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REGISTRY="$GWS_OS_DIR/accounts/registry.json"
-PROFILES_DIR="$HOME/.config/gws-profiles"
-
-if [[ ! -f "$REGISTRY" ]]; then
-    echo "ERROR: No accounts configured. Run 'bash setup' first."
-    exit 1
-fi
-
-# Strip keyring backend output
-gws_clean() {
-    GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$PROFILES_DIR/$1" gws "${@:2}" 2>&1 | grep -v '^Using keyring backend:'
-}
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/gws-common.sh"
+gws_init
 
 echo "=== GWS Schedule ==="
 echo ""
@@ -29,8 +14,8 @@ echo ""
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 END=$(date -u -v+14d +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -d "+14 days" +"%Y-%m-%dT%H:%M:%SZ")
 
-for PROFILE in $(jq -r '.accounts[].gws_profile' "$REGISTRY"); do
-    LABEL=$(jq -r --arg p "$PROFILE" '.accounts[] | select(.gws_profile==$p) | .label' "$REGISTRY")
+for PROFILE in $(get_profiles); do
+    LABEL=$(get_account_field "$PROFILE" label)
     echo "=== Calendar: $LABEL ==="
     gws_clean "$PROFILE" calendar events list \
         --params "{\"calendarId\":\"primary\",\"timeMin\":\"$NOW\",\"timeMax\":\"$END\",\"singleEvents\":true,\"orderBy\":\"startTime\"}" \
@@ -40,16 +25,10 @@ done
 
 # Load personas for scheduling rules
 echo "=== Persona Calendar Rules ==="
-for PERSONA_FILE in "$GWS_OS_DIR"/accounts/personas/*.md; do
-    if [[ -f "$PERSONA_FILE" && "$(basename "$PERSONA_FILE")" != "example.md" ]]; then
-        echo "--- $(basename "$PERSONA_FILE") ---"
-        cat "$PERSONA_FILE"
-        echo ""
-    fi
-done
+print_personas
 
 # Load scheduling preferences
-PLAN_PREFS="$GWS_OS_DIR/memory/topics/scheduling-preferences.md"
+PLAN_PREFS="$GWS_MEMORY_DIR/topics/scheduling-preferences.md"
 if [[ -f "$PLAN_PREFS" ]]; then
     echo "=== Learned Scheduling Preferences ==="
     cat "$PLAN_PREFS"
@@ -58,15 +37,7 @@ fi
 
 # Load contacts (for attendee context)
 echo "=== Known Contacts ==="
-if ls "$GWS_OS_DIR"/memory/contacts/*.md &>/dev/null; then
-    for CONTACT_FILE in "$GWS_OS_DIR"/memory/contacts/*.md; do
-        echo "--- $(basename "$CONTACT_FILE") ---"
-        head -15 "$CONTACT_FILE"
-        echo ""
-    done
-else
-    echo "  No contacts in memory yet."
-fi
+print_contacts
 ```
 
 ## Instructions
