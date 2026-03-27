@@ -491,12 +491,13 @@ Every skill handles failures gracefully:
 
 ## Distribution Plan
 
-- Open-source GitHub repo at `~/Projects/gws-os/` (cloneable)
-- Install: `git clone <repo-url> ~/Projects/gws-os/` then run `/gws setup` to install dependencies and configure accounts
-- Requires: `gws` CLI (installed via setup script), `jq`, Google OAuth credentials per account
-- Setup script handles `gws` installation and account configuration
+- Open-source GitHub repo at https://github.com/cheeky-amit/gws-os (MIT license)
+- Install: `git clone https://github.com/cheeky-amit/gws-os.git ~/Projects/gws-os` then run `bash setup`
+- Requires: `gws` CLI (`brew install googleworkspace-cli`), `jq` (`brew install jq`), Claude Code, Google OAuth credentials per account
+- Setup script handles `gws` validation and account configuration
 - `/gws onboard` runs an interactive questionnaire for persona and SOP setup (or skip to defaults)
 - README with installation instructions, example personas, and contribution guide
+- License: MIT
 
 ## Next Steps
 

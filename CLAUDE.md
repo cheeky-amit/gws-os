@@ -131,3 +131,4 @@ gws-profile() {
 - Git: conventional commits (feat|fix|refactor|docs|test|chore)
 - Skills: YAML frontmatter + bash preamble + Claude instructions
 - Memory nodes: YAML frontmatter in markdown files
+- License: MIT (see LICENSE file)
