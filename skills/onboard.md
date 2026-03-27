@@ -4,33 +4,18 @@ description: Interactive setup questionnaire — configure account personas, SOP
 ---
 
 ```bash
-# Verify dependencies
-command -v gws >/dev/null 2>&1 || { echo "ERROR: gws not installed. Run 'bash setup' first"; exit 1; }
-command -v jq >/dev/null 2>&1 || { echo "ERROR: jq required. Run: brew install jq"; exit 1; }
-
-GWS_OS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REGISTRY="$GWS_OS_DIR/accounts/registry.json"
-
-if [[ ! -f "$REGISTRY" ]]; then
-    echo "ERROR: No accounts configured. Run 'bash setup' first."
-    exit 1
-fi
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/gws-common.sh"
+gws_init
 
 echo "=== GWS OS Onboarding ==="
 echo ""
 echo "Configured accounts:"
-jq -r '.accounts[] | "  - \(.id): \(.email) (\(.label)) [scan: \(.scan_window)]"' "$REGISTRY"
+print_accounts
 echo ""
 
 # Read existing personas
-for PERSONA_FILE in "$GWS_OS_DIR"/accounts/personas/*.md; do
-    if [[ -f "$PERSONA_FILE" ]]; then
-        BASENAME=$(basename "$PERSONA_FILE")
-        echo "=== Current persona: $BASENAME ==="
-        cat "$PERSONA_FILE"
-        echo ""
-    fi
-done
+echo "=== Current Personas ==="
+print_personas
 ```
 
 ## Instructions
