@@ -4,8 +4,9 @@ set -euo pipefail
 # post-action.sh — Called after any gws action to log to memory nodes
 # Usage: bash post-action.sh <action> <account_id> <contact_email> [topic] [extra_json]
 #
-# Phase 1-2: Appends to memory/actions/{action}.jsonl
-# Phase 3-4: Also writes graph edges via gws-graph-write.py
+# Tier 1 storage (CAR Protocol): raw action events in JSONL.
+# When a contact crosses the consolidation threshold (5 observations),
+# triggers pattern-detect.sh for Tier 2/3 promotion.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ACTIONS_DIR="$SCRIPT_DIR/memory/actions"
@@ -35,6 +36,20 @@ echo "$ENTRY" >> "$ACTIONS_DIR/${ACTION}.jsonl"
 if [[ "${GWS_TRUST_LEVEL:-}" == "automate" ]]; then
     DATE=$(date +"%Y-%m-%d")
     echo "$ENTRY" >> "$ACTIONS_DIR/automate-log-${DATE}.jsonl"
+fi
+
+# Check if contact crossed the consolidation threshold (5 observations)
+# If so, trigger pattern detection for Tier 2/3 promotion (CAR Protocol)
+OBS_COUNT=0
+for AF in "$ACTIONS_DIR"/*.jsonl; do
+    [[ -f "$AF" ]] || continue
+    C=$(grep -c "\"contact\":\"$CONTACT\"" "$AF" 2>/dev/null || echo 0)
+    OBS_COUNT=$((OBS_COUNT + C))
+done
+
+if [[ $OBS_COUNT -ge 5 ]]; then
+    echo "Consolidation threshold reached ($OBS_COUNT observations). Triggering pattern detection."
+    bash "$SCRIPT_DIR/hooks/pattern-detect.sh" "$CONTACT"
 fi
 
 echo "Logged: $ACTION by $CONTACT on $ACCOUNT"

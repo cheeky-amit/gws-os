@@ -359,3 +359,332 @@ print_topics() {
     done
     $found || echo "  No topics in memory yet."
 }
+
+# --- Trust Progression ---
+
+# Promote trust level for a contact+action pair.
+# Called when streak >= threshold. Promotion order: observe → suggest → assist → automate
+# Usage: promote_trust <contact_email> <action_type>
+promote_trust() {
+    local email="$1" action="$2"
+
+    # Resolve current trust level
+    local current
+    current=$(resolve_trust "$email" "$action")
+
+    # Determine next level
+    local next
+    case "$current" in
+        observe)  next="suggest"  ;;
+        suggest)  next="assist"   ;;
+        assist)   next="automate" ;;
+        automate)
+            echo "Already at maximum trust level (automate) for $email / $action"
+            return 0
+            ;;
+        *)
+            echo "Unknown trust level: $current"
+            return 1
+            ;;
+    esac
+
+    # Update the contact node's trust level for this action
+    local contact_file
+    contact_file=$(get_contact_file "$email") || {
+        echo "Contact not found: $email"
+        return 1
+    }
+
+    # Update trust_levels sub-field in frontmatter
+    if grep -q "^  ${action}:" "$contact_file" 2>/dev/null; then
+        sed -i '' "s|^  ${action}:.*|  ${action}: ${next}|" "$contact_file"
+    else
+        # Insert the action under trust_levels
+        sed -i '' "/^trust_levels:/a\\
+  ${action}: ${next}
+" "$contact_file"
+    fi
+
+    echo "Promoted $email / $action: $current → $next"
+}
+
+# Demote trust level for a contact+action pair.
+# Called on user override. Drops one level, resets streak to 0.
+# Also logs to disagreement memory.
+# Usage: demote_trust <contact_email> <action_type> <reason>
+demote_trust() {
+    local email="$1" action="$2" reason="${3:-user override}"
+
+    # Resolve current trust level
+    local current
+    current=$(resolve_trust "$email" "$action")
+
+    # Determine previous level
+    local prev
+    case "$current" in
+        automate) prev="assist"  ;;
+        assist)   prev="suggest" ;;
+        suggest)  prev="observe" ;;
+        observe)
+            echo "Already at minimum trust level (observe) for $email / $action"
+            # Still reset streak and log disagreement
+            update_contact "$email" "${action}_streak" "0"
+            log_disagreement "$action" "$current" "observe" "$reason"
+            return 0
+            ;;
+        *)
+            echo "Unknown trust level: $current"
+            return 1
+            ;;
+    esac
+
+    # Update the contact node's trust level for this action
+    local contact_file
+    contact_file=$(get_contact_file "$email") || {
+        echo "Contact not found: $email"
+        return 1
+    }
+
+    if grep -q "^  ${action}:" "$contact_file" 2>/dev/null; then
+        sed -i '' "s|^  ${action}:.*|  ${action}: ${prev}|" "$contact_file"
+    else
+        sed -i '' "/^trust_levels:/a\\
+  ${action}: ${prev}
+" "$contact_file"
+    fi
+
+    # Reset streak to 0
+    update_contact "$email" "${action}_streak" "0"
+
+    # Log the disagreement
+    log_disagreement "$action" "$current" "$prev" "$reason"
+
+    echo "Demoted $email / $action: $current → $prev (streak reset, reason: $reason)"
+}
+
+# Check if a contact+action pair is ready for promotion.
+# Reads streak from contact node, compares to threshold from trust-levels.json.
+# Returns 0 (ready) or 1 (not ready). Prints the current streak and threshold.
+# Usage: check_promotion <contact_email> <action_type>
+check_promotion() {
+    local email="$1" action="$2"
+
+    # Get current streak from contact node
+    local contact_file streak
+    contact_file=$(get_contact_file "$email") || {
+        echo "Contact not found: $email"
+        return 1
+    }
+    streak=$(grep "^${action}_streak:" "$contact_file" 2>/dev/null | sed "s/^${action}_streak: *//")
+    streak="${streak:-0}"
+
+    # Get threshold from trust-levels.json
+    local threshold
+    if [[ -f "$GWS_MEMORY_DIR/trust-levels.json" ]]; then
+        local current_level
+        current_level=$(resolve_trust "$email" "$action")
+        threshold=$(jq -r --arg a "$action" --arg l "$current_level" \
+            '.thresholds[$a][$l] // .thresholds.default[$l] // 5' \
+            "$GWS_MEMORY_DIR/trust-levels.json" 2>/dev/null)
+    fi
+    threshold="${threshold:-5}"
+
+    echo "Streak: $streak / $threshold (action: $action, contact: $email)"
+
+    if [[ "$streak" -ge "$threshold" ]]; then
+        echo "Ready for promotion."
+        return 0
+    else
+        echo "Not ready. Need $((threshold - streak)) more consistent actions."
+        return 1
+    fi
+}
+
+# Log a disagreement (user overrode system recommendation).
+# Appends to memory/actions/disagreements.jsonl
+# Usage: log_disagreement <action> <system_recommendation> <user_override> <reason>
+log_disagreement() {
+    local action="$1" system_rec="$2" user_override="$3" reason="${4:-}"
+
+    local ts
+    ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    local entry
+    entry=$(jq -cn --arg ts "$ts" --arg action "$action" \
+        --arg system "$system_rec" --arg override "$user_override" \
+        --arg reason "$reason" \
+        '{ts:$ts, action:$action, system_recommendation:$system, user_override:$override, reason:$reason}')
+
+    mkdir -p "$GWS_MEMORY_DIR/actions"
+    echo "$entry" >> "$GWS_MEMORY_DIR/actions/disagreements.jsonl"
+}
+
+# --- Graph Wrappers (call bin/gws-graph.py from shell) ---
+
+# Query the graph for context about an email. Returns JSON.
+# Usage: graph_query <email> [limit]
+graph_query() {
+    local email="$1" limit="${2:-10}"
+    local script="$GWS_OS_DIR/bin/gws-graph.py"
+
+    if [[ ! -f "$script" ]]; then
+        echo '{"warning":"gws-graph.py not found. Graph features available in Phase 3+.","results":[]}'
+        return 0
+    fi
+
+    python3 "$script" query --email "$email" --limit "$limit"
+}
+
+# Write an edge to the graph.
+# Usage: graph_write <from> <to> <edge> [weight]
+graph_write() {
+    local from="$1" to="$2" edge="$3" weight="${4:-1.0}"
+    local script="$GWS_OS_DIR/bin/gws-graph.py"
+
+    if [[ ! -f "$script" ]]; then
+        echo "Warning: gws-graph.py not found. Graph features available in Phase 3+."
+        return 0
+    fi
+
+    python3 "$script" write --from "$from" --to "$to" --edge "$edge" --weight "$weight"
+}
+
+# Run relevance scoring for a contact. Returns JSON with score + breakdown.
+# Usage: graph_score <email>
+graph_score() {
+    local email="$1"
+    local script="$GWS_OS_DIR/bin/gws-graph.py"
+
+    if [[ ! -f "$script" ]]; then
+        echo '{"warning":"gws-graph.py not found. Graph features available in Phase 3+.","score":0,"breakdown":{}}'
+        return 0
+    fi
+
+    python3 "$script" score --email "$email"
+}
+
+# Run consolidation. Mode: daily, weekly, monthly.
+# Usage: graph_consolidate <mode>
+graph_consolidate() {
+    local mode="${1:-daily}"
+    local script="$GWS_OS_DIR/bin/gws-graph.py"
+
+    if [[ ! -f "$script" ]]; then
+        echo "Warning: gws-graph.py not found. Graph features available in Phase 3+."
+        return 0
+    fi
+
+    python3 "$script" consolidate --mode "$mode"
+}
+
+# --- Prospective Triggers ---
+
+# Create a forward-planted trigger that fires when conditions are met.
+# Usage: create_trigger <content> <conditions_json> [expires_date]
+# conditions_json is a JSON array of strings: '["mentions Acme", "topic is quarterly-reports"]'
+create_trigger() {
+    local content="$1" conditions="$2" expires="${3:-}"
+
+    local ts
+    ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    local trigger
+    if [[ -n "$expires" ]]; then
+        trigger=$(jq -cn --arg ts "$ts" --arg content "$content" \
+            --argjson conditions "$conditions" --arg expires "$expires" \
+            '{ts:$ts, content:$content, conditions:$conditions, expires:$expires, fired:false}')
+    else
+        trigger=$(jq -cn --arg ts "$ts" --arg content "$content" \
+            --argjson conditions "$conditions" \
+            '{ts:$ts, content:$content, conditions:$conditions, expires:null, fired:false}')
+    fi
+
+    mkdir -p "$GWS_MEMORY_DIR"
+    echo "$trigger" >> "$GWS_MEMORY_DIR/prospective.jsonl"
+
+    echo "Trigger created: $content (conditions: $conditions)"
+}
+
+# Check all triggers against current session context.
+# Reads memory/prospective.jsonl, checks each trigger's conditions.
+# Prints matching triggers. Removes expired ones.
+# Usage: check_triggers <context_text>
+check_triggers() {
+    local context="$1"
+    local trigger_file="$GWS_MEMORY_DIR/prospective.jsonl"
+
+    if [[ ! -f "$trigger_file" ]]; then
+        return 0
+    fi
+
+    local today
+    today=$(date +%Y-%m-%d)
+    local kept_lines=""
+    local matched=false
+
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+
+        # Check expiration
+        local expires
+        expires=$(echo "$line" | jq -r '.expires // empty')
+        if [[ -n "$expires" && "$expires" < "$today" ]]; then
+            # Expired — skip (don't keep)
+            continue
+        fi
+
+        # Check if already fired
+        local fired
+        fired=$(echo "$line" | jq -r '.fired')
+        if [[ "$fired" == "true" ]]; then
+            kept_lines="${kept_lines}${line}\n"
+            continue
+        fi
+
+        # Check all conditions (simple substring match)
+        local all_match=true
+        local condition_count
+        condition_count=$(echo "$line" | jq -r '.conditions | length')
+
+        for ((i=0; i<condition_count; i++)); do
+            local cond
+            cond=$(echo "$line" | jq -r --argjson i "$i" '.conditions[$i]')
+            if [[ "$context" != *"$cond"* ]]; then
+                all_match=false
+                break
+            fi
+        done
+
+        if $all_match; then
+            local content
+            content=$(echo "$line" | jq -r '.content')
+            echo "TRIGGER MATCH: $content"
+            matched=true
+            # Mark as fired
+            line=$(echo "$line" | jq -c '.fired = true')
+        fi
+
+        kept_lines="${kept_lines}${line}\n"
+    done < "$trigger_file"
+
+    # Rewrite file without expired triggers
+    echo -e "$kept_lines" | sed '/^$/d' > "$trigger_file"
+
+    $matched || return 0
+}
+
+# --- Metamemory ---
+
+# Print the metamemory index summary (what the system knows, confidence, gaps).
+# Reads memory/metamemory-index.json if it exists.
+# Usage: print_metamemory
+print_metamemory() {
+    local index_file="$GWS_MEMORY_DIR/metamemory-index.json"
+
+    if [[ ! -f "$index_file" ]]; then
+        echo "No metamemory index yet. Run /gws weekly to generate."
+        return 0
+    fi
+
+    cat "$index_file"
+}
