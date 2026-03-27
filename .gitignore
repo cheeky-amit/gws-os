@@ -14,6 +14,11 @@ memory/actions/*
 !memory/contacts/.gitkeep
 !memory/topics/.gitkeep
 !memory/actions/.gitkeep
+memory/graph.jsonl
+memory/metamemory-index.json
+memory/prospective.jsonl
+memory/actions/archive/
+memory/actions/disagreements.jsonl
 
 # Trust levels (user-specific)
 memory/trust-levels.json
